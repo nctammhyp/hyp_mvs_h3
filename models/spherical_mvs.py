@@ -4,7 +4,7 @@ import torch.nn.functional as F
 import torchvision.models as models
 
 # -----------------------------
-# Feature extractor
+# 1. Feature extractor
 # -----------------------------
 class ResNet18FullRes(nn.Module):
     def __init__(self, pretrained=True, out_channels=64):
@@ -51,18 +51,18 @@ class ResNet18FullRes(nn.Module):
         return x
 
 # -----------------------------
-# Spherical grid
+# 2. Spherical grid
 # -----------------------------
-def create_fisheye_spherical_grid(H,W,D,depth_hypo,device):
+def create_simple_spherical_grid(H,W,D,device):
     u = torch.linspace(-1,1,W,device=device)
     v = torch.linspace(-1,1,H,device=device)
     uu, vv = torch.meshgrid(u,v, indexing='xy')
-    grid = torch.stack([uu,vv], dim=-1)
-    grid = grid.unsqueeze(0).repeat(D,1,1,1)
+    grid = torch.stack([uu,vv], dim=-1)  # [H,W,2]
+    grid = grid.unsqueeze(0).repeat(D,1,1,1)  # [D,H,W,2]
     return grid
 
 # -----------------------------
-# Warp features
+# 3. Warp features
 # -----------------------------
 def warp_features(src_feat, grid):
     B,C,H,W = src_feat.shape
@@ -72,10 +72,10 @@ def warp_features(src_feat, grid):
         warp = F.grid_sample(src_feat, grid[d].unsqueeze(0).repeat(B,1,1,1),
                              mode='bilinear', padding_mode='zeros', align_corners=True)
         warped.append(warp)
-    return torch.stack(warped, dim=2)
+    return torch.stack(warped, dim=2)  # [B,C,D,H,W]
 
 # -----------------------------
-# Build cost volume
+# 4. Cost volume
 # -----------------------------
 def build_cost_volume(ref_feat, src_feats, grid):
     ref_vol = ref_feat.unsqueeze(2).repeat(1,1,grid.shape[0],1,1)
@@ -83,7 +83,7 @@ def build_cost_volume(ref_feat, src_feats, grid):
     return torch.cat([ref_vol]+warped_list, dim=1)
 
 # -----------------------------
-# 3D CNN regularization
+# 5. 3D CNN regularization
 # -----------------------------
 class CostReg3D(nn.Module):
     def __init__(self, in_channels):
@@ -101,7 +101,7 @@ class CostReg3D(nn.Module):
         return x.squeeze(1)
 
 # -----------------------------
-# Soft-argmin
+# 6. Soft-argmin
 # -----------------------------
 def soft_argmin(cost_vol, depth_hypo):
     prob = F.softmax(-cost_vol, dim=1)
@@ -109,16 +109,16 @@ def soft_argmin(cost_vol, depth_hypo):
     return torch.sum(prob*depth_hypo, dim=1)
 
 # -----------------------------
-# Multi-view spherical MVS
+# 7. Multi-view spherical MVS
 # -----------------------------
-class MultiViewFisheyeMVS(nn.Module):
+class MultiViewSphericalMVS_FullRes(nn.Module):
     def __init__(self, n_src=2, feat_channels=64):
         super().__init__()
         self.n_src = n_src
         self.feature_extractor = ResNet18FullRes(out_channels=feat_channels)
         self.cost_reg = CostReg3D(feat_channels*(n_src+1))
 
-    def forward(self, imgs, grid, ref_ext=None, src_exts=None, depth_hypo=None):
+    def forward(self, imgs, grid, depth_hypo):
         ref_img = imgs[0]
         src_imgs = imgs[1:]
         ref_feat = self.feature_extractor(ref_img)
