@@ -1,3 +1,4 @@
 colmap_output/
 checkpoints/
 outputs/
+__pycache__/
