@@ -46,7 +46,7 @@ if __name__=="__main__":
     criterion = nn.L1Loss(reduction='none')  # áp mask
 
     # Load checkpoint nếu có
-    checkpoint_path = "/home/sw-tamnguyen/Desktop/depth_project/hyp_mvs_h3/checkpoints/model_epoch_27_pretrain.pth"
+    checkpoint_path = "/home/sw-tamnguyen/Desktop/depth_project/hyp_mvs_h3/checkpoints/model_epoch_45_pretrain.pth"
     if os.path.exists(checkpoint_path):
         print(f"Loading checkpoint from {checkpoint_path}")
         checkpoint = torch.load(checkpoint_path, map_location=DEVICE)
