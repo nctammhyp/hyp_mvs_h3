@@ -10,7 +10,7 @@ from models.fisheye_mvs import MultiViewFisheyeMVS, create_fisheye_spherical_gri
 from utils.calib_loader import load_extrinsics
 
 # ------------------------
-# Helper: lưu depth với colormap
+# Helpers: lưu depth / ảnh
 # ------------------------
 def save_depth_as_cmap(tensor, path, vmax=None):
     tensor = tensor.detach().cpu().numpy()
@@ -29,42 +29,32 @@ def save_img(tensor, path):
 if __name__=="__main__":
     DEVICE = "cuda"
     BATCH_SIZE = 4
-    EPOCHS = 10
+    EPOCHS = 100
     D = 48
     IMG_SIZE = 256
-    ROOT = "/home/sw-tamnguyen/Desktop/depth_project/datasets/datasets/hyp_synthetic/"
-    CALIB_DIR = "calib_data"
-    MASK_PATH = "masks/mask_fisheye.png"
+    ROOT = r"F:\Full-Dataset\FisheyeDepthDataset\data_calib\Pos9_calib\train"
+    CALIB_DIR = r"F:\hyp_mvs_o1\calib_data"
+    MASK_PATH = r"F:\hyp_mvs_o1\masks\mask_fisheye.png"
 
-    # ------------------------
     # Dataset & Loader
-    # ------------------------
     dataset = FisheyeMVSDataset(ROOT, IMG_SIZE)
     loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=0, drop_last=True)
 
-    # ------------------------
-    # Model
-    # ------------------------
+    # Model & Optimizer
     model = MultiViewFisheyeMVS().to(DEVICE)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
-
-    # Loss
-    criterion = nn.L1Loss(reduction='none')  # sẽ apply mask
+    criterion = nn.L1Loss(reduction='none')  # áp mask
 
     # Depth hypothesis + grid
     depth_hypo = torch.linspace(1,10,D,device=DEVICE)
     grid = create_fisheye_spherical_grid(IMG_SIZE,IMG_SIZE,D,depth_hypo,DEVICE)
 
-    # ------------------------
-    # Load mask
-    # ------------------------
+    # Mask
     mask_img = cv2.imread(MASK_PATH, cv2.IMREAD_GRAYSCALE)
     mask_img = cv2.resize(mask_img, (IMG_SIZE, IMG_SIZE))
-    mask_tensor = torch.from_numpy(mask_img.astype('float32')/255.0).to(DEVICE)  # 1 = vòng tròn
+    mask_tensor = torch.from_numpy(mask_img.astype('float32')/255.0).to(DEVICE)
 
-    # ------------------------
     # Training
-    # ------------------------
     os.makedirs("checkpoints", exist_ok=True)
     os.makedirs("epoch_visuals", exist_ok=True)
 
@@ -76,12 +66,8 @@ if __name__=="__main__":
         os.makedirs(epoch_dir, exist_ok=True)
 
         for batch_idx, batch in enumerate(tqdm(loader)):
-            imgs = [im.to(DEVICE) for im in batch["imgs"]]  # list of 3
-            gt_depth = batch["depth"].to(DEVICE)
-
-            # Áp mask lên input (tùy chọn, nếu muốn)
-            for i in range(3):
-                imgs[i] = imgs[i] * mask_tensor.unsqueeze(0)
+            imgs = [im.to(DEVICE) for im in batch["imgs"]]  # [ref, src1, src2]
+            gt_depth = batch["depth"].to(DEVICE)           # từ camera ref
 
             # Extrinsics
             ref_ext, src_exts = load_extrinsics(DEVICE, gt_depth.shape[0], CALIB_DIR)
@@ -89,7 +75,7 @@ if __name__=="__main__":
             # Forward
             pred_depth = model(imgs, grid, ref_ext, src_exts, depth_hypo)
 
-            # Loss chỉ trên mask
+            # Loss trên mask
             masked_loss = torch.abs(pred_depth - gt_depth) * mask_tensor.unsqueeze(0)
             loss = masked_loss.sum() / mask_tensor.sum()
 
@@ -99,9 +85,7 @@ if __name__=="__main__":
             optimizer.step()
             total_loss += loss.item()
 
-            # ------------------------
-            # Lưu ảnh: input / pred / gt
-            # ------------------------
+            # Lưu ref + pred + GT (1 ảnh GT)
             for b in range(pred_depth.shape[0]):
                 save_img(imgs[0][b], os.path.join(epoch_dir, f"ref_{batch_idx}_{b}.png"))
                 save_depth_as_cmap(pred_depth[b]*mask_tensor, os.path.join(epoch_dir, f"pred_{batch_idx}_{b}.png"))
