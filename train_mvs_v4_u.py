@@ -37,7 +37,7 @@ ROOT = "/home/sw-tamnguyen/Desktop/depth_project/datasets/datasets/hyp_synthetic
 MASK_PATH = "masks/mask_fisheye.png"
 
 dataset = FisheyeMVSDataset(ROOT, IMG_SIZE)
-loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=0, drop_last=True)
+loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, drop_last=True)
 
 model = MultiViewFisheyeMVS().to(DEVICE)
 optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
