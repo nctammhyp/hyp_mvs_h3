@@ -45,6 +45,17 @@ if __name__=="__main__":
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
     criterion = nn.L1Loss(reduction='none')  # áp mask
 
+    # Load checkpoint nếu có
+    checkpoint_path = "/home/sw-tamnguyen/Desktop/depth_project/hyp_mvs_h3/checkpoints/model_epoch_45_pretrain.pth"
+    if os.path.exists(checkpoint_path):
+        print(f"Loading checkpoint from {checkpoint_path}")
+        checkpoint = torch.load(checkpoint_path, map_location=DEVICE)
+        model.load_state_dict(checkpoint)  # nếu bạn lưu chỉ model.state_dict()
+        # Nếu checkpoint lưu cả optimizer, thì thêm:
+        # optimizer.load_state_dict(checkpoint['optimizer'])
+        print("Checkpoint loaded successfully!")
+
+
     # Depth hypothesis + grid
     depth_hypo = torch.linspace(1,10,D,device=DEVICE)
     grid = create_fisheye_spherical_grid(IMG_SIZE,IMG_SIZE,D,depth_hypo,DEVICE)
