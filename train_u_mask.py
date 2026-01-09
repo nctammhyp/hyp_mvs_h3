@@ -29,7 +29,7 @@ def save_img(tensor, path):
 if __name__=="__main__":
     DEVICE = "cuda"
     BATCH_SIZE = 4
-    EPOCHS = 100
+    EPOCHS = 500
     D = 48
     IMG_SIZE = 256
     ROOT = "/home/sw-tamnguyen/Desktop/depth_project/datasets/datasets/hyp_synthetic/"
@@ -46,7 +46,7 @@ if __name__=="__main__":
     criterion = nn.L1Loss(reduction='none')  # áp mask
 
     # Load checkpoint nếu có
-    checkpoint_path = "/home/sw-tamnguyen/Desktop/depth_project/hyp_mvs_h3/checkpoints/model_epoch_45_pretrain.pth"
+    checkpoint_path = "/home/sw-tamnguyen/Desktop/depth_project/hyp_mvs_h3/checkpoints/model_epoch_27_pretrain.pth"
     if os.path.exists(checkpoint_path):
         print(f"Loading checkpoint from {checkpoint_path}")
         checkpoint = torch.load(checkpoint_path, map_location=DEVICE)
