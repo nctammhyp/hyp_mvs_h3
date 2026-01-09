@@ -52,9 +52,9 @@ def save_depth_as_cmap(tensor, path, cmap="viridis"):
 # -------------------------------
 if __name__=="__main__":
     DEVICE = "cuda"
-    BATCH_SIZE = 4
+    BATCH_SIZE = 16
     EPOCHS = 100
-    D = 16
+    D = 48
     IMG_SIZE = 256
     ROOT = "/home/sw-tamnguyen/Desktop/depth_project/datasets/datasets/hyp_synthetic/"
     CALIB_DIR = "calib_data"
