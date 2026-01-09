@@ -52,7 +52,7 @@ def save_depth_as_cmap(tensor, path, cmap="viridis"):
 # -------------------------------
 if __name__=="__main__":
     DEVICE = "cuda"
-    BATCH_SIZE = 16
+    BATCH_SIZE = 4
     EPOCHS = 100
     D = 48
     IMG_SIZE = 256
