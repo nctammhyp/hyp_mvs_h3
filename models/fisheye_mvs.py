@@ -1,129 +1,79 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torchvision.models as models
+from torchvision.models import resnet18
 
-# -----------------------------
-# Feature extractor
-# -----------------------------
-class ResNet18FullRes(nn.Module):
-    def __init__(self, pretrained=True, out_channels=64):
+class FeatureExtractor(nn.Module):
+    def __init__(self, out_channels=32):
         super().__init__()
-        resnet = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1 if pretrained else None)
-
-        self.conv1 = nn.Conv2d(3, 64, 7, stride=1, padding=3, bias=False)
-        self.conv1.weight.data.copy_(resnet.conv1.weight.data)
-        self.bn1 = resnet.bn1
-        self.relu = resnet.relu
-
-        self.layer1 = resnet.layer1
-        self.layer2 = self._make_layer_fullres(resnet.layer2)
-        self.layer3 = self._make_layer_fullres(resnet.layer3)
-        self.layer4 = self._make_layer_fullres(resnet.layer4)
-
-        self.out_conv = nn.Conv2d(512, out_channels, 1)
-
-    def _make_layer_fullres(self, layer):
-        modules = []
-        for block in layer:
-            block.conv1.stride = (1,1)
-            block.conv2.dilation = (2,2)
-            block.conv2.padding = (2,2)
-            if block.downsample is not None:
-                in_c = block.downsample[0].in_channels
-                out_c = block.downsample[0].out_channels
-                block.downsample = nn.Sequential(
-                    nn.Conv2d(in_c, out_c, 1, stride=1, bias=False),
-                    nn.BatchNorm2d(out_c)
-                )
-            modules.append(block)
-        return nn.Sequential(*modules)
+        resnet = resnet18(weights=None)
+        self.backbone = nn.Sequential(
+            resnet.conv1,
+            resnet.bn1,
+            resnet.relu,
+            resnet.maxpool,
+            resnet.layer1,
+            resnet.layer2,
+            resnet.layer3,
+            resnet.layer4,
+        )
+        self.conv = nn.Conv2d(512, out_channels, 1)
 
     def forward(self, x):
-        x = self.conv1(x)
-        x = self.bn1(x)
-        x = self.relu(x)
-        x = self.layer1(x)
-        x = self.layer2(x)
-        x = self.layer3(x)
-        x = self.layer4(x)
-        x = self.out_conv(x)
+        x = self.backbone(x)
+        x = self.conv(x)
+        # Upsample to 256x256 to match GT
+        x = F.interpolate(x, size=(256,256), mode="bilinear", align_corners=False)
         return x
 
-# -----------------------------
-# Spherical grid
-# -----------------------------
-def create_fisheye_spherical_grid(H,W,D,depth_hypo,device):
+def create_fisheye_spherical_grid(H, W, D, depth_hypo, device):
     u = torch.linspace(-1,1,W,device=device)
     v = torch.linspace(-1,1,H,device=device)
-    uu, vv = torch.meshgrid(u,v, indexing='xy')
-    grid = torch.stack([uu,vv], dim=-1)
-    grid = grid.unsqueeze(0).repeat(D,1,1,1)
-    return grid
+    uu, vv = torch.meshgrid(u,v,indexing='xy')
+    theta = uu * torch.pi
+    phi = vv * torch.pi/2
+    x = torch.cos(phi)*torch.sin(theta)
+    y = torch.sin(phi)
+    z = torch.cos(phi)*torch.cos(theta)
+    rays = torch.stack([x,y,z],dim=-1).unsqueeze(0).repeat(D,1,1,1)
+    rays = rays / torch.norm(rays, dim=-1, keepdim=True)
+    return rays * depth_hypo.view(-1,1,1,1)
 
-# -----------------------------
-# Warp features
-# -----------------------------
-def warp_features(src_feat, grid):
-    B,C,H,W = src_feat.shape
-    D = grid.shape[0]
-    warped = []
-    for d in range(D):
-        warp = F.grid_sample(src_feat, grid[d].unsqueeze(0).repeat(B,1,1,1),
-                             mode='bilinear', padding_mode='zeros', align_corners=True)
-        warped.append(warp)
-    return torch.stack(warped, dim=2)
-
-# -----------------------------
-# Build cost volume
-# -----------------------------
-def build_cost_volume(ref_feat, src_feats, grid):
-    ref_vol = ref_feat.unsqueeze(2).repeat(1,1,grid.shape[0],1,1)
-    warped_list = [warp_features(src, grid) for src in src_feats]
-    return torch.cat([ref_vol]+warped_list, dim=1)
-
-# -----------------------------
-# 3D CNN regularization
-# -----------------------------
 class CostReg3D(nn.Module):
-    def __init__(self, in_channels):
+    def __init__(self, in_ch):
         super().__init__()
-        self.layer1 = nn.Sequential(nn.Conv3d(in_channels,64,3,1,1), nn.BatchNorm3d(64), nn.ReLU())
-        self.layer2 = nn.Sequential(nn.Conv3d(64,64,3,1,1), nn.BatchNorm3d(64), nn.ReLU())
-        self.layer3 = nn.Sequential(nn.Conv3d(64,32,3,1,1), nn.BatchNorm3d(32), nn.ReLU())
-        self.layer4 = nn.Conv3d(32,1,3,1,1)
-
+        self.net = nn.Sequential(
+            nn.Conv3d(in_ch,32,3,1,1), nn.BatchNorm3d(32), nn.ReLU(),
+            nn.Conv3d(32,32,3,1,1), nn.BatchNorm3d(32), nn.ReLU(),
+            nn.Conv3d(32,1,3,1,1)
+        )
     def forward(self,x):
-        x = self.layer1(x)
-        x = self.layer2(x)
-        x = self.layer3(x)
-        x = self.layer4(x)
-        return x.squeeze(1)
+        return self.net(x).squeeze(1)
 
-# -----------------------------
-# Soft-argmin
-# -----------------------------
-def soft_argmin(cost_vol, depth_hypo):
-    prob = F.softmax(-cost_vol, dim=1)
-    depth_hypo = depth_hypo.view(1,-1,1,1).to(cost_vol.device)
-    return torch.sum(prob*depth_hypo, dim=1)
+def soft_argmin(cost, depth_hypo):
+    prob = F.softmax(-cost, dim=1)
+    return torch.sum(prob*depth_hypo.view(1,-1,1,1),dim=1)
 
-# -----------------------------
-# Multi-view spherical MVS
-# -----------------------------
 class MultiViewFisheyeMVS(nn.Module):
-    def __init__(self, n_src=2, feat_channels=64):
+    def __init__(self, n_src=2):
         super().__init__()
         self.n_src = n_src
-        self.feature_extractor = ResNet18FullRes(out_channels=feat_channels)
-        self.cost_reg = CostReg3D(feat_channels*(n_src+1))
+        self.feat = FeatureExtractor()
+        self.cost_reg = CostReg3D(32*(n_src+1))
 
-    def forward(self, imgs, grid, ref_ext=None, src_exts=None, depth_hypo=None):
-        ref_img = imgs[0]
-        src_imgs = imgs[1:]
-        ref_feat = self.feature_extractor(ref_img)
-        src_feats = [self.feature_extractor(im) for im in src_imgs]
-        cost_vol = build_cost_volume(ref_feat, src_feats, grid)
-        cost_vol = self.cost_reg(cost_vol)
-        depth_map = soft_argmin(cost_vol, depth_hypo)
-        return depth_map
+    def forward(self, imgs, grid, ref_ext, src_exts, depth_hypo):
+        ref = imgs[0]; srcs = imgs[1:]
+        ref_f = self.feat(ref)
+        src_fs = [self.feat(s) for s in srcs]
+        B,C,H,W = ref_f.shape
+        D = grid.shape[0]
+
+        # Build cost volume
+        ref_vol = ref_f.unsqueeze(2).repeat(1,1,D,1,1)
+        vols = [ref_vol]
+        for sf in src_fs:
+            vols.append(sf.unsqueeze(2).repeat(1,1,D,1,1))
+        cost_vol = torch.cat(vols,dim=1)
+        cost = self.cost_reg(cost_vol)
+        depth = soft_argmin(cost, depth_hypo)
+        return depth
