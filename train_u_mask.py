@@ -32,9 +32,9 @@ if __name__=="__main__":
     EPOCHS = 100
     D = 48
     IMG_SIZE = 256
-    ROOT = r"F:\Full-Dataset\FisheyeDepthDataset\data_calib\Pos9_calib\train"
-    CALIB_DIR = r"F:\hyp_mvs_o1\calib_data"
-    MASK_PATH = r"F:\hyp_mvs_o1\masks\mask_fisheye.png"
+    ROOT = "/home/sw-tamnguyen/Desktop/depth_project/datasets/datasets/hyp_synthetic/"
+    CALIB_DIR = "calib_data"
+    MASK_PATH = "masks/mask_fisheye.png"
 
     # Dataset & Loader
     dataset = FisheyeMVSDataset(ROOT, IMG_SIZE)
