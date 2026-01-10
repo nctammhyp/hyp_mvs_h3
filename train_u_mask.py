@@ -38,7 +38,7 @@ if __name__=="__main__":
 
     # Dataset & Loader
     dataset = FisheyeMVSDataset(ROOT, IMG_SIZE)
-    loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=0, drop_last=True)
+    loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, drop_last=True)
 
     # Model & Optimizer
     model = MultiViewFisheyeMVS().to(DEVICE)
@@ -46,7 +46,7 @@ if __name__=="__main__":
     criterion = nn.L1Loss(reduction='none')  # áp mask
 
     # Load checkpoint nếu có
-    checkpoint_path = "/home/sw-tamnguyen/Desktop/depth_project/hyp_mvs_h3/checkpoints/model_epoch_45_pretrain.pth"
+    checkpoint_path = "/home/sw-tamnguyen/Desktop/depth_project/hyp_mvs_h3/checkpoints/model_epoch_500_pretrain.pth"
     if os.path.exists(checkpoint_path):
         print(f"Loading checkpoint from {checkpoint_path}")
         checkpoint = torch.load(checkpoint_path, map_location=DEVICE)
